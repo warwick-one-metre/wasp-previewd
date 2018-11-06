@@ -1,0 +1,16 @@
+[Unit]
+Description=Frame preview server for the SuperWASP telescope.
+After=syslog.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Restart=on-failure
+Type=simple
+User=goto
+ExecStart=/usr/bin/env python3.4 -u /usr/bin/wasp-previewd
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
