@@ -1,12 +1,12 @@
 Name:      wasp-preview-server
-Version:   1.0.0
+Version:   1.1.0
 Release:   0
 Url:       https://github.com/warwick-one-metre/wasp-previewd
 Summary:   Frame preview server for the SuperWASP telescope
 License:   GPL-3.0
 Group:     Unspecified
 BuildArch: noarch
-Requires: python34, python34-Pyro4, python34-astropy, python34-numpy, python34-Pillow, python34-warwick-observatory-common
+Requires: python36, python36-Pyro4, python36-astropy, python36-numpy, python36-Pillow, python36-warwick-observatory-common
 
 %description
 
