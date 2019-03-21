@@ -7,6 +7,7 @@ RPMBUILD = rpmbuild --define "_topdir %(pwd)/build" \
 all:
 	mkdir -p build
 	${RPMBUILD} -ba wasp-preview-server.spec
+	${RPMBUILD} -ba wasp-preview-server-data.spec
 	${RPMBUILD} -ba wasp-preview-client.spec
 	mv build/noarch/*.rpm .
 	rm -rf build

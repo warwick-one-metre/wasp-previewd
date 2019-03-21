@@ -21,6 +21,7 @@ script:
  - deploy/fetch-package-repository.sh
  # Set the spec Revision field to <latest in repo> + 1
  - deploy/repository/set-spec-release.sh wasp-preview-server.spec
+ - deploy/repository/set-spec-release.sh wasp-preview-server-data.spec
  - deploy/repository/set-spec-release.sh wasp-preview-client.spec
 
  # Compile rpm packages by running `make` in a centos7 container
