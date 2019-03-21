@@ -47,13 +47,23 @@ NOTIFY_FRAME_IPS = [IP.GOTOServer]
 
 FRAME_FORMAT = 'DAS{0}_*{1:09d}.*'
 SCP_FORMAT = 'scp wasp@192.168.0.49:/data/das{0}/*/' + FRAME_FORMAT + ' {2} > /dev/null'
+OUTPUT_DIR = '/srv/dashboard/generated/'
+
+# DAS: [dx, dy, rot180]
+FRAME_OFFSETS = {
+    2: [165, 27, False],
+    4: [44, 1853, False],
+    5: [1049, 2626, False],
+    6: [1864, 285, False],
+    7: [2006, 1769, True]
+}
 
 def rescale_image_data(data, clip_low, clip_high):
     """ Returns a normalised array where clip_low percent of the pixels are 0 and
         clip_high percent of the pixels are 255
     """
-    high = np.percentile(data, clip_high)
-    low = np.percentile(data, clip_low)
+    high = np.nanpercentile(data, clip_high)
+    low = np.nanpercentile(data, clip_low)
     scale = 255. / (high - low)
     data = np.clip(data, low, high)
     return scale * (data - low)
@@ -71,75 +81,54 @@ class WaspPreviewDaemon:
         # Min and max percentage thresholds to use for the preview pngs
         self._dashboard_min_threshold = 5
         self._dashboard_max_threshold = 95
-        self._dashboard_thumb_size = 1024
-
-        self._dashboard_clip_size = 1024
-        self._dashboard_clip_x1 = (4096 - 1024) / 2
-        self._dashboard_clip_x2 = self._dashboard_clip_x1 + 1024
-        self._dashboard_clip_y1 = (4096 - 1024) / 2
-        self._dashboard_clip_y2 = self._dashboard_clip_y1 + 1024
 
     def __build_preview(self, exposure_number, object_name):
         with tempfile.TemporaryDirectory() as temp_dir:
             metadata = {}
-            footprint = np.zeros((4096, 4096))
-            for i in [1, 2, 4, 8]:
-                command = SCP_FORMAT.format(i, exposure_number, temp_dir)
+            footprint = np.empty((4696, 4096))
+            footprint.fill(np.nan)
+
+            for das, (dx, dy, rot180) in FRAME_OFFSETS.items():
+                command = SCP_FORMAT.format(das, exposure_number, temp_dir)
                 os.system(command)
 
-                file = glob.glob(os.path.join(temp_dir, FRAME_FORMAT.format(i, exposure_number)))
+                file = glob.glob(os.path.join(temp_dir, FRAME_FORMAT.format(das, exposure_number)))
                 if file:
-                    # pylint: disable=no-member
                     with fits.open(file[0]) as frame:
-                        data = frame[0].data[0:2048, 0:2048]
-                        if i == 1:
-                            data = np.fliplr(np.rot90(data))
-                            xslice = slice(2048, 4096)
-                            yslice = slice(0, 2048)
-                        elif i == 2:
-                            data = np.transpose(data)
-                            xslice = slice(0, 2048)
-                            yslice = slice(0, 2048)
-                        elif i == 4:
-                            data = np.transpose(data)
-                            xslice = slice(0, 2048)
-                            yslice = slice(2048, 4096)
-                        else:
-                            data = np.fliplr(np.rot90(data))
-                            xslice = slice(2048, 4096)
-                            yslice = slice(2048, 4096)
+                        data = np.transpose(frame[0].data[0:2048, 0:2048])
+                        if rot180:
+                            data = np.rot90(data, 2)
 
-                        footprint[yslice, xslice] = rescale_image_data(
-                            data, self._dashboard_min_threshold, self._dashboard_max_threshold)
+                        # TODO: bias, flat corretions
 
-                        if not metadata:
-                            metadata = {
-                                'object': object_name,
-                                'exposure_number': exposure_number,
-                                'date': frame[0].header['DATE-OBS'] + 'T' + \
-                                        frame[0].header['UTSTART'],
-                                'exptime': frame[0].header['EXPTIME'],
-                                'clipsize': self._dashboard_clip_size,
-                                'size': [4096, 4096]
-                            }
-                    # pylint: enable=no-member
+                        footprint[dy:dy+2048, dx:dx+2048] = data
+
+                    if not metadata:
+                        metadata = {
+                            'object': object_name,
+                            'exposure_number': exposure_number,
+                            'date': frame[0].header['DATE-OBS'] + 'T' + \
+                                    frame[0].header['UTSTART'],
+                            'exptime': frame[0].header['EXPTIME'],
+                            'clipsize': 1024,
+                            'size': [4096, 4696]
+                        }
+
+            footprint = rescale_image_data(footprint, 5, 95)
 
             png = Image.fromarray(footprint).convert('RGB')
             png = ImageOps.flip(png)
 
-            png.thumbnail((self._dashboard_thumb_size, self._dashboard_thumb_size))
-            png.save('/srv/dashboard/generated/dashboard-wasp-thumb.jpg', 'JPEG',
+            png.thumbnail((1024, 1174))
+            png.save(os.path.join(OUTPUT_DIR, 'dashboard-wasp-thumb.jpg'), 'JPEG',
                      quality=80, optimize=True, progressive=True, clobber=True)
 
-            clipped = footprint[self._dashboard_clip_y1:self._dashboard_clip_y2,
-                                self._dashboard_clip_x1:self._dashboard_clip_x2]
-
-            png = Image.fromarray(clipped).convert('RGB')
+            png = Image.fromarray(footprint[1836:2860, 1536:2560]).convert('RGB')
             png = ImageOps.flip(png)
-            png.save('/srv/dashboard/generated/dashboard-wasp-clip.jpg', 'JPEG',
+            png.save(os.path.join(OUTPUT_DIR, 'dashboard-wasp-clip.jpg'), 'JPEG',
                      quality=80, optimize=True, progressive=True, clobber=True)
 
-            with open('/srv/dashboard/generated/dashboard-wasp.json', 'w') as outfile:
+            with open(os.path.join(OUTPUT_DIR, 'dashboard-wasp.json'), 'w') as outfile:
                 json.dump(metadata, outfile)
 
     def __process_previews(self):
@@ -167,6 +156,7 @@ class WaspPreviewDaemon:
         """Called by the camera daemons to notify that a new frame has been saved to disk"""
         if not pyro_client_matches(NOTIFY_FRAME_IPS):
             return 1
+
         self._process_queue.put((exposure_number, exposure_delay, object_name))
 
         return 0
