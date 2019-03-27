@@ -51,12 +51,32 @@ OUTPUT_DIR = '/srv/dashboard/generated/'
 CALIBS_DIR = '/etc/wasp-previewd/'
 
 # DAS: [dx, dy, rot180]
-FRAME_OFFSETS = {
-    2: [165, 27, False],
-    4: [44, 1853, False],
-    5: [1049, 2626, False],
-    6: [1864, 285, False],
-    7: [2006, 1769, True]
+CONFIG = {
+    '5': {
+        'size': (2048, 2048),
+        'thumbsize': (1024, 1024),
+        'footprint': {
+            5: [0, 0, False]
+        }
+    },
+    '7': {
+        'size': (2048, 2048),
+        'thumbsize': (1024, 1024),
+        'footprint': {
+            7: [0, 0, True]
+        }
+    },
+    None: {
+        'size': (4696, 4096),
+        'thumbsize': (1024, 1174),
+        'footprint': {
+            2: [165, 27, False],
+            4: [44, 1853, False],
+            5: [1049, 2626, False],
+            6: [1864, 285, False],
+            7: [2006, 1769, True]
+        }
+    }
 }
 
 def rescale_image_data(data, clip_low, clip_high):
@@ -82,31 +102,37 @@ class WaspPreviewDaemon:
         self._bias = {}
         self._flat = {}
 
-        for das in FRAME_OFFSETS:
+        # pylint: disable=no-member
+        for das in [2, 4, 5, 6, 7]:
             with fits.open(os.path.join(CALIBS_DIR, 'DAS{0}_Bias.fits.gz'.format(das))) as frame:
                 self._bias[das] = np.transpose(frame[0].data[0:2048, 5:2048])
 
             with fits.open(os.path.join(CALIBS_DIR, 'DAS{0}_Flat.fits.gz'.format(das))) as frame:
                 self._flat[das] = np.transpose(frame[0].data[0:2048, 5:2048])
+        # pylint: enable=no-member
 
         # Min and max percentage thresholds to use for the preview pngs
         self._dashboard_min_threshold = 5
         self._dashboard_max_threshold = 95
 
-    def __build_preview(self, exposure_number, object_name):
+    def __build_preview(self, exposure_number, object_name, das_group):
         with tempfile.TemporaryDirectory() as temp_dir:
             metadata = {}
-            footprint = np.empty((4696, 4096))
+            config = CONFIG.get(das_group, None) or CONFIG[None]
+
+            footprint = np.empty(config['size'])
             footprint.fill(np.nan)
 
-            for das, (dx, dy, rot180) in FRAME_OFFSETS.items():
+            for das, (dx, dy, rot180) in config['footprint'].items():
                 command = SCP_FORMAT.format(das, exposure_number, temp_dir)
                 os.system(command)
 
                 file = glob.glob(os.path.join(temp_dir, FRAME_FORMAT.format(das, exposure_number)))
                 if file:
                     with fits.open(file[0]) as frame:
+                        # pylint: disable=no-member
                         data = np.transpose(frame[0].data[0:2048, 5:2048].astype(np.float32))
+                        # pylint: enable=no-member
                         data -= self._bias[das]
                         data /= self._flat[das]
 
@@ -119,24 +145,33 @@ class WaspPreviewDaemon:
                             self._dashboard_max_threshold)
 
                     if not metadata:
+                        # pylint: disable=no-member
+                        header = frame[0].header
+                        # pylint: enable=no-member
+
                         metadata = {
                             'object': object_name,
                             'exposure_number': exposure_number,
-                            'date': frame[0].header['DATE-OBS'] + 'T' + \
-                                    frame[0].header['UTSTART'],
-                            'exptime': frame[0].header['EXPTIME'],
+                            'date': header['DATE-OBS'] + 'T' + header['UTSTART'],
+                            'exptime': header['EXPTIME'],
                             'clipsize': 1024,
-                            'size': [4096, 4696]
+                            'size': config['size']
                         }
 
             png = Image.fromarray(footprint).convert('RGB')
             png = ImageOps.flip(png)
 
-            png.thumbnail((1024, 1174))
+            png.thumbnail(config['thumbsize'])
             png.save(os.path.join(OUTPUT_DIR, 'dashboard-wasp-thumb.jpg'), 'JPEG',
                      quality=80, optimize=True, progressive=True, clobber=True)
 
-            png = Image.fromarray(footprint[1836:2860, 1536:2560]).convert('RGB')
+            s = config['size']
+            clip_y1 = (s[0] - 1024) // 2
+            clip_y2 = (s[0] + 1024) // 2
+            clip_x1 = (s[1] - 1024) // 2
+            clip_x2 = (s[1] + 1024) // 2
+
+            png = Image.fromarray(footprint[clip_y1:clip_y2, clip_x1:clip_x2]).convert('RGB')
             png = ImageOps.flip(png)
             png.save(os.path.join(OUTPUT_DIR, 'dashboard-wasp-clip.jpg'), 'JPEG',
                      quality=80, optimize=True, progressive=True, clobber=True)
@@ -147,7 +182,7 @@ class WaspPreviewDaemon:
     def __process_previews(self):
         while True:
             # Blocks until a frame is available for processing
-            exposure_number, exposure_delay, object_name = self._process_queue.get()
+            exposure_number, exposure_delay, object_name, das_group = self._process_queue.get()
 
             # Wait for frame to be available
             time.sleep(exposure_delay)
@@ -155,7 +190,7 @@ class WaspPreviewDaemon:
             start = datetime.datetime.utcnow()
 
             try:
-                self.__build_preview(exposure_number, object_name)
+                self.__build_preview(exposure_number, object_name, das_group)
             except Exception:
                 print('Unexpected exception while processing ' + str(exposure_number) + ':')
                 traceback.print_exc(file=sys.stdout)
@@ -165,12 +200,12 @@ class WaspPreviewDaemon:
             print('processed ' + str(exposure_number) + ' in ' + str(round(process_time, 2)) + 's')
 
     @Pyro4.expose
-    def notify_exposure(self, exposure_number, exposure_delay, object_name):
+    def notify_exposure(self, exposure_number, exposure_delay, object_name, das_group):
         """Called by the camera daemons to notify that a new frame has been saved to disk"""
         if not pyro_client_matches(NOTIFY_FRAME_IPS):
             return 1
 
-        self._process_queue.put((exposure_number, exposure_delay, object_name))
+        self._process_queue.put((exposure_number, exposure_delay, object_name, das_group))
 
         return 0
 

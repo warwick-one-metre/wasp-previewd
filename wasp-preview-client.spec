@@ -1,5 +1,5 @@
 Name:      wasp-preview-client
-Version:   1.1.0
+Version:   1.3.0
 Release:   0
 Url:       https://github.com/warwick-one-metre/wasp-previewd
 Summary:   Commandline utility to notify the preview daemon of a new frame to process.
