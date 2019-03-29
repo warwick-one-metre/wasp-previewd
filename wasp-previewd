@@ -43,7 +43,7 @@ from warwick.observatory.common import (
 
 from warwick.observatory.common.helpers import pyro_client_matches
 
-NOTIFY_FRAME_IPS = [IP.GOTOServer]
+NOTIFY_FRAME_IPS = [IP.GOTOServer, IP.SWASPGPSPi]
 
 FRAME_FORMAT = 'DAS{0}_*{1:09d}.*'
 SCP_FORMAT = 'scp wasp@192.168.0.49:/data/das{0}/*/' + FRAME_FORMAT + ' {2} > /dev/null'

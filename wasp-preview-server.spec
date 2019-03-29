@@ -1,5 +1,5 @@
 Name:      wasp-preview-server
-Version:   1.3.0
+Version:   1.3.1
 Release:   0
 Url:       https://github.com/warwick-one-metre/wasp-previewd
 Summary:   Frame preview server for the SuperWASP telescope
