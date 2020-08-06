@@ -1,12 +1,12 @@
 Name:      wasp-preview-client
-Version:   1.3.0
+Version:   1.3.1
 Release:   0
 Url:       https://github.com/warwick-one-metre/wasp-previewd
 Summary:   Commandline utility to notify the preview daemon of a new frame to process.
 License:   GPL-3.0
 Group:     Unspecified
 BuildArch: noarch
-Requires:  python36, python36-Pyro4, python36-warwick-observatory-common
+Requires:  python3, python3-Pyro4, python3-warwick-observatory-common
 
 %description
 
