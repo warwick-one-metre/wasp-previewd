@@ -1,5 +1,5 @@
 Name:      wasp-preview-server-data
-Version:   1.0.0
+Version:   1.1.0
 Release:   0
 Url:       https://github.com/warwick-one-metre/wasp-previewd
 Summary:   Calibration frames for wasp-preview-server

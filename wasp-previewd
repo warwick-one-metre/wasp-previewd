@@ -37,6 +37,7 @@ from astropy.io import fits
 import numpy as np
 from PIL import Image, ImageOps
 import Pyro4
+import sep
 from warwick.observatory.common import (
     daemons,
     IP)
@@ -67,17 +68,19 @@ CONFIG = {
         }
     },
     None: {
-        'size': (4696, 4096),
-        'thumbsize': (1024, 1174),
+        'size': (4608, 4096),
+        'thumbsize': (1024, 1152),
         'footprint': {
-            2: [165, 27, False],
-            4: [44, 1853, False],
-            5: [1049, 2626, False],
-            6: [1864, 285, False],
-            7: [2006, 1769, True]
+            1: [1876, 2012, True],
+            2: [22, 103, False],
+            4: [22, 1946, False],
+            5: [991, 2513, False],
+            6: [1954, 3, False],
+            7: [879, 1015, True]
         }
     }
 }
+
 
 def rescale_image_data(data, clip_low, clip_high):
     """ Returns a normalised array where clip_low percent of the pixels are 0 and
@@ -88,6 +91,7 @@ def rescale_image_data(data, clip_low, clip_high):
     scale = 255. / (high - low)
     data = np.clip(data, low, high)
     return scale * (data - low)
+
 
 class WaspPreviewDaemon:
     """Daemon interface for data pipeline"""
@@ -103,7 +107,7 @@ class WaspPreviewDaemon:
         self._flat = {}
 
         # pylint: disable=no-member
-        for das in [2, 4, 5, 6, 7]:
+        for das in [1, 2, 4, 5, 6, 7]:
             with fits.open(os.path.join(CALIBS_DIR, 'DAS{0}_Bias.fits.gz'.format(das))) as frame:
                 self._bias[das] = np.transpose(frame[0].data[0:2048, 5:2048])
 
@@ -138,6 +142,9 @@ class WaspPreviewDaemon:
 
                         if rot180:
                             data = np.rot90(data, 2)
+
+                        data = np.ascontiguousarray(data, dtype=float)
+                        sep.Background(data).subfrom(data)
 
                         footprint[dy + 5:dy+2048, dx:dx+2048] = rescale_image_data(
                             data,
